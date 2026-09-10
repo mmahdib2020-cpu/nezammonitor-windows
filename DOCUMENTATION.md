@@ -99,7 +99,7 @@
 
 ### Step 1: Download
 Download the latest release from:
-- **GitHub Releases:** https://github.com/mmahdib2020-cpu/nezammonitor-windows/releases
+- **GitHub Releases:** https://github.com/Barkhordari-dev/nezammonitor-windows/releases
 
 Choose version:
 - **Full Version** (~142MB) - Includes Playwright for auto-update
@@ -273,8 +273,8 @@ Choose version:
 **مهندس برخورداری**
 
 ### GitHub
-- **Repository:** https://github.com/mmahdib2020-cpu/nezammonitor-windows
-- **Issues:** https://github.com/mmahdib2020-cpu/nezammonitor-windows/issues
+- **Repository:** https://github.com/Barkhordari-dev/nezammonitor-windows
+- **Issues:** https://github.com/Barkhordari-dev/nezammonitor-windows/issues
 
 ### Documentation
 - **README:** See README.md in repository

@@ -86,7 +86,7 @@ NezamMonitor/
 
 For issues or questions:
 - **Developer:** مهندس برخورداری
-- **GitHub:** https://github.com/mmahdib2020-cpu/nezammonitor-windows
+- **GitHub:** https://github.com/Barkhordari-dev/nezammonitor-windows
 
 ## 📋 System Requirements
 
