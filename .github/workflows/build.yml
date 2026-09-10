@@ -1,0 +1,44 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore src/NezamMonitor.sln
+    
+    - name: Build
+      run: dotnet build src/NezamMonitor.sln -c Release --no-restore
+    
+    - name: Publish
+      run: dotnet publish src/NezamMonitor.App/NezamMonitor.App.csproj -c Release -o publish/
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: NezamMonitor-Windows
+        path: publish/
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: publish/*.exe
+        draft: false
+        prerelease: false
