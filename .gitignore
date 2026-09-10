@@ -1,5 +1,5 @@
 # Database files (contains user data, credentials, cases)
-data/
+/data/
 *.db
 *.db-wal
 *.db-shm
@@ -7,15 +7,15 @@ data/
 # Generated reports (contains case data)
 release/outputs/
 
-# Playwright / Node.js
-release/.playwright/
-node_modules/
-package-lock.json
-
 # Build artifacts
 bin/
 obj/
 publish/
+
+# Playwright / Node.js
+.playwright/
+node_modules/
+package-lock.json
 
 # Logs
 logs/
@@ -50,3 +50,10 @@ tmp/
 
 # Excel files (data)
 *.xlsx
+
+# Release binaries (keep source only)
+release/*.dll
+release/*.exe
+release/*.pdb
+release/*.deps.json
+release/*.runtimeconfig.json
