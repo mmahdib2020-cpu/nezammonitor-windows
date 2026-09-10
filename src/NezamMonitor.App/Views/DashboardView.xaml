@@ -1,0 +1,74 @@
+<UserControl x:Class="NezamMonitor.App.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Text="📊 داشبورد" FontSize="{DynamicResource HeadingFontSize}" FontWeight="Bold" Margin="0,0,0,20"/>
+
+            <!-- Connection Status -->
+            <Border Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15"
+                    BorderBrush="#BDC3C7" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="وضعیت سیستم" FontSize="{DynamicResource FontSize}" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="وضعیت اتصال:" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"/>
+                            <TextBlock Text="{Binding ConnectionStatus}" FontSize="{DynamicResource FontSize}" FontWeight="Bold"
+                                       Foreground="#27AE60"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="آخرین بروزرسانی:" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"/>
+                            <TextBlock Text="{Binding LastUpdate}" FontSize="{DynamicResource FontSize}" FontWeight="Bold"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Statistics -->
+            <Border Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15"
+                    BorderBrush="#BDC3C7" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="آمار کلی" FontSize="{DynamicResource FontSize}" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" HorizontalAlignment="Center" Margin="0,0,10,0">
+                            <TextBlock Text="📋 پرونده‌ها" HorizontalAlignment="Center" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"/>
+                            <TextBlock Text="{Binding TotalCases}" HorizontalAlignment="Center" FontSize="{DynamicResource HeadingFontSize}" FontWeight="Bold" Foreground="#2C3E50"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center" Margin="0,0,10,0">
+                            <TextBlock Text="👷 ناظرین" HorizontalAlignment="Center" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"/>
+                            <TextBlock Text="{Binding TotalEngineers}" HorizontalAlignment="Center" FontSize="{DynamicResource HeadingFontSize}" FontWeight="Bold" Foreground="#3498DB"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Center" Margin="0,0,10,0">
+                            <TextBlock Text="💰 حق‌الزحمه" HorizontalAlignment="Center" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"/>
+                            <TextBlock Text="{Binding TotalFees}" HorizontalAlignment="Center" FontSize="{DynamicResource HeadingFontSize}" FontWeight="Bold" Foreground="#E67E22"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                            <TextBlock Text="📄 گزارش‌ها" HorizontalAlignment="Center" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"/>
+                            <TextBlock Text="{Binding TotalReports}" HorizontalAlignment="Center" FontSize="{DynamicResource HeadingFontSize}" FontWeight="Bold" Foreground="#9B59B6"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Quick Actions -->
+            <Border Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15"
+                    BorderBrush="#BDC3C7" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="دسترسی سریع" FontSize="{DynamicResource FontSize}" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <TextBlock Text="برای بروزرسانی اطلاعات، از بخش «⚙️ به‌روزرسانی» در منوی کناری استفاده کنید."
+                               TextWrapping="Wrap" Foreground="#7F8C8D"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

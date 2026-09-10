@@ -1,0 +1,140 @@
+<UserControl x:Class="NezamMonitor.App.Views.FeesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="💰 حق‌الزحمه" FontSize="{DynamicResource HeadingFontSize}" FontWeight="Bold" Margin="0,0,0,10"/>
+
+        <!-- Summary Cards -->
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#2ECC71" CornerRadius="8" Padding="10" Margin="0,0,5,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="پرداخت شده" Foreground="White" FontSize="{DynamicResource LabelFontSize}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding PaidAmount}" Foreground="White" FontSize="{DynamicResource FontSize}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding PaidCount, StringFormat='{}{0} مورد'}" Foreground="#D5F5E3" FontSize="{DynamicResource LogFontSize}" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Background="#3498DB" CornerRadius="8" Padding="10" Margin="2,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="تایید شده" Foreground="White" FontSize="{DynamicResource LabelFontSize}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding ConfirmedAmount}" Foreground="White" FontSize="{DynamicResource FontSize}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding ConfirmedCount, StringFormat='{}{0} مورد'}" Foreground="#D6EAF8" FontSize="{DynamicResource LogFontSize}" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Background="#E67E22" CornerRadius="8" Padding="10" Margin="2,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="در انتظار" Foreground="White" FontSize="{DynamicResource LabelFontSize}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding PendingAmount}" Foreground="White" FontSize="{DynamicResource FontSize}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding PendingCount, StringFormat='{}{0} مورد'}" Foreground="#FDEBD0" FontSize="{DynamicResource LogFontSize}" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Background="#8E44AD" CornerRadius="8" Padding="10" Margin="5,0,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="کل" Foreground="White" FontSize="{DynamicResource LabelFontSize}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalAmount}" Foreground="White" FontSize="{DynamicResource FontSize}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalCount, StringFormat='{}{0} مورد'}" Foreground="#EBDEF0" FontSize="{DynamicResource LogFontSize}" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Filter Row 1 -->
+        <Border Grid.Row="2" Background="#F8F9FA" CornerRadius="8" Padding="12" Margin="0,0,0,6"
+                BorderBrush="#DEE2E6" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="150"/><ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="150"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="🔍 جستجو:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalContentAlignment="Center" Margin="5,0" FontSize="{DynamicResource InputFontSize}"/>
+                <TextBlock Grid.Column="3" Text="مالک:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <ComboBox Grid.Column="4" ItemsSource="{Binding OwnerFilters}" SelectedItem="{Binding FilterOwner}" Height="28" Margin="5,0" FontSize="{DynamicResource InputFontSize}" IsEditable="True" StaysOpenOnEdit="True"/>
+                <TextBlock Grid.Column="6" Text="شماره پرونده:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <ComboBox Grid.Column="7" ItemsSource="{Binding CaseNumberFilters}" SelectedItem="{Binding FilterCaseNumber}" Height="28" Margin="5,0" FontSize="{DynamicResource InputFontSize}" IsEditable="True" StaysOpenOnEdit="True"/>
+                <TextBlock Grid.Column="9" Text="رشته:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <ComboBox Grid.Column="10" ItemsSource="{Binding DisciplineFilters}" SelectedItem="{Binding FilterDiscipline}" Height="28" Margin="5,0" FontSize="{DynamicResource InputFontSize}"/>
+            </Grid>
+        </Border>
+
+        <!-- Filter Row 2 -->
+        <Border Grid.Row="3" Background="#F8F9FA" CornerRadius="8" Padding="12" Margin="0,0,0,8"
+                BorderBrush="#DEE2E6" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/><ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="80"/><ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="80"/><ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="وضعیت:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding StatusFilters}" SelectedItem="{Binding FilterStatus}" Height="28" Margin="5,0" FontSize="{DynamicResource InputFontSize}"/>
+                <TextBlock Grid.Column="3" Text="مرحله:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <ComboBox Grid.Column="4" ItemsSource="{Binding StageFilters}" SelectedItem="{Binding FilterStage}" Height="28" Margin="5,0" FontSize="{DynamicResource InputFontSize}"/>
+                <TextBlock Grid.Column="6" Text="نوع خدمت:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <ComboBox Grid.Column="7" ItemsSource="{Binding ServiceTypeFilters}" SelectedItem="{Binding FilterServiceType}" Height="28" Margin="5,0" FontSize="{DynamicResource InputFontSize}" IsEditable="True" StaysOpenOnEdit="True"/>
+                <TextBlock Grid.Column="9" Text="مبلغ از:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <TextBox Grid.Column="10" Text="{Binding FilterAmountFrom, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalContentAlignment="Center" Margin="5,0" FontSize="{DynamicResource InputFontSize}"/>
+                <TextBlock Grid.Column="12" Text="تا:" VerticalAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource LabelFontSize}"/>
+                <TextBox Grid.Column="13" Text="{Binding FilterAmountTo, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalContentAlignment="Center" Margin="5,0" FontSize="{DynamicResource InputFontSize}"/>
+                <Button Grid.Column="15" Content="🧹 پاک کردن فیلترها" Command="{Binding ClearFiltersCommand}"
+                        Height="28" Padding="10,0" Background="#E74C3C" Foreground="White"
+                        FontSize="{DynamicResource ButtonFontSize}" FontWeight="Bold"
+                        Visibility="{Binding HasActiveFilters, Converter={StaticResource BoolToVisConverter}}"/>
+                <TextBlock Grid.Column="17" Text="{Binding CountDisplay}" VerticalAlignment="Center" Foreground="#7F8C8D" FontSize="{DynamicResource FontSize}" FontWeight="Bold"/>
+            </Grid>
+        </Border>
+
+        <!-- DataGrid -->
+        <DataGrid Grid.Row="4" x:Name="FeesGrid" ItemsSource="{Binding Fees}" AutoGenerateColumns="False"
+                  AlternatingRowBackground="#F8F9FA" GridLinesVisibility="Horizontal"
+                  HeadersVisibility="Column" BorderThickness="1" BorderBrush="#DEE2E6"
+                  MouseRightButtonUp="FeesGrid_MouseRightButtonUp" FlowDirection="{DynamicResource TableFlowDirection}">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="انتخاب" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                <DataGridTextColumn Header="پرونده" Binding="{Binding CaseNumber}" Width="100" IsReadOnly="True"/>
+                <DataGridTextColumn Header="مالک" Binding="{Binding Owner}" Width="120" IsReadOnly="True"/>
+                <DataGridTextColumn Header="رشته" Binding="{Binding Discipline}" Width="80" IsReadOnly="True"/>
+                <DataGridTextColumn Header="نوع خدمت" Binding="{Binding ServiceType}" Width="80" IsReadOnly="True"/>
+                <DataGridTextColumn Header="مرحله" Binding="{Binding Stage}" Width="60" IsReadOnly="True"/>
+                <DataGridTextColumn Header="مبلغ" Binding="{Binding Amount}" Width="120" IsReadOnly="True"/>
+                <DataGridTextColumn Header="وضعیت" Binding="{Binding PayStatus}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="تایید" Binding="{Binding ConfirmStatus}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="شروع" Binding="{Binding StartDate}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="پایان" Binding="{Binding EndDate}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="توضیحات" Binding="{Binding Description}" Width="150" IsReadOnly="True"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Border Grid.Row="5" Background="#2C3E50" CornerRadius="6" Padding="10" Margin="0,5,0,0">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="انتخاب شده:" Foreground="#ECF0F1" FontWeight="Bold" Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding SelectedCount}" Foreground="#2ECC71" FontWeight="Bold" Margin="0,0,5,0"/>
+                <TextBlock Text="مورد | جمع:" Foreground="#ECF0F1" Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding SelectedAmount}" Foreground="#F1C40F" FontWeight="Bold" FontSize="{DynamicResource FontSize}"/>
+            </StackPanel>
+        </Border>
+        <TextBlock Grid.Row="6" Text="{Binding StatusMessage}" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}" Margin="0,5,0,0"/>
+    </Grid>
+</UserControl>

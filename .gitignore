@@ -1,0 +1,52 @@
+# Database files (contains user data, credentials, cases)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Generated reports (contains case data)
+release/outputs/
+
+# Playwright / Node.js
+release/.playwright/
+node_modules/
+package-lock.json
+
+# Build artifacts
+bin/
+obj/
+publish/
+
+# Logs
+logs/
+*.log
+
+# NuGet packages
+packages/
+
+# User-specific files
+*.user
+*.suo
+*.cache
+.vs/
+
+# IDE files
+.idea/
+*.swp
+*~
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Backup files
+*.nzbkp
+*.nzmdata
+
+# Temp files
+temp/
+tmp/
+
+# Excel files (data)
+*.xlsx
