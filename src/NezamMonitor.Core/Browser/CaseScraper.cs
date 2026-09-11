@@ -5,13 +5,20 @@ namespace NezamMonitor.Core.Browser;
 
 /// <summary>
 /// Scrapes case data from the Nezam Engineering website using IBrowser.
-/// Based on the legacy Python scraper (nezam_v2.py).
+/// Uses targeted DOM extraction instead of body.innerText + Regex where possible.
 /// </summary>
 public sealed class CaseScraper : ICaseScraper
 {
     private readonly IWebBrowser _browser;
     private const string BaseUrl = "http://service.yazdnezam.ir:8033";
     private const string TableUrl = $"{BaseUrl}/panel/dashboard/khadamat/parvandeNezarat";
+
+    // Dialog wait timeout — maximum time to wait for a dialog to appear
+    private static readonly TimeSpan DialogTimeout = TimeSpan.FromSeconds(10);
+    // Table wait timeout — maximum time to wait for table rows
+    private static readonly TimeSpan TableTimeout = TimeSpan.FromSeconds(15);
+    // Small fallback delay when no specific condition is available
+    private const int FallbackDelayMs = 500;
 
     public CaseScraper(IWebBrowser browser) => _browser = browser;
 
@@ -20,14 +27,21 @@ public sealed class CaseScraper : ICaseScraper
         try
         {
             await _browser.NavigateAsync($"{BaseUrl}/panel/login", ct);
-            await Task.Delay(5000, ct);
-
             await _browser.WaitForSelectorAsync("input[name=\"login\"]", TimeSpan.FromSeconds(15), ct);
+
             await _browser.FillAsync("input[name=\"login\"]", username, ct);
             await _browser.FillAsync("input[name=\"password\"]", password, ct);
             await _browser.ClickAsync("button:has-text('ورود')", ct);
-            await Task.Delay(8000, ct);
 
+            // Wait for navigation away from login page
+            try
+            {
+                await _browser.WaitForSelectorAsync("input[name=\"login\"]", TimeSpan.FromSeconds(3), ct);
+                // If we can still see login input, login may have failed — but wait a bit more
+            }
+            catch { /* Expected: login input disappears after successful login */ }
+
+            await Task.Delay(FallbackDelayMs, ct);
             await CloseDialogsAsync(ct);
             return await IsLoggedInAsync(ct);
         }
@@ -40,7 +54,7 @@ public sealed class CaseScraper : ICaseScraper
     public async Task NavigateToTableAsync(CancellationToken ct = default)
     {
         await _browser.NavigateAsync(TableUrl, ct);
-        await Task.Delay(10000, ct);
+        await _browser.WaitForSelectorAsync("table tbody tr", TableTimeout, ct);
         await CloseDialogsAsync(ct);
 
         // Select Ardakan (checkbox index 1)
@@ -48,13 +62,13 @@ public sealed class CaseScraper : ICaseScraper
         if (checks.Count >= 2)
         {
             await checks[1].ClickAsync(ct);
-            await Task.Delay(5000, ct);
+            await _browser.WaitForSelectorAsync("table tbody tr", TableTimeout, ct);
         }
 
         // Click Monitoring tab
         await _browser.EvaluateAsync(
             "document.querySelectorAll('.v-tab').forEach(t => { if(t.textContent.trim().includes('نظارت')) t.click(); })", ct);
-        await Task.Delay(12000, ct);
+        await _browser.WaitForSelectorAsync("table tbody tr", TableTimeout, ct);
         await CloseDialogsAsync(ct);
     }
 
@@ -110,21 +124,20 @@ public sealed class CaseScraper : ICaseScraper
             Office = basicCase.Office,
         };
 
-        // Scrape engineers (column 10)
+        // Engineers (column 10)
         try
         {
             if (await ClickCellButtonAsync(row, 10, ct))
             {
-                await Task.Delay(5000, ct);
-                var text = await _browser.EvaluateAsync("document.body.innerText", ct);
-                result.Engineers = ParseEngineers(text);
+                await WaitForDialogAsync(ct);
+                result.Engineers = await ExtractEngineersFromDialogAsync(ct);
                 await CloseDialogsAsync(ct);
                 await NavigateToTableIfNeededAsync(ct);
             }
         }
         catch { /* continue */ }
 
-        // Scrape specifications — click last button to open dialog
+        // Specifications (column 11)
         row = await FindRowAsync(basicCase.Serial, ct);
         if (row != null)
         {
@@ -132,25 +145,8 @@ public sealed class CaseScraper : ICaseScraper
             {
                 if (await ClickCellButtonAsync(row, 11, ct))
                 {
-                    await Task.Delay(5000, ct);
-                    var text = await _browser.EvaluateAsync("document.body.innerText", ct);
-                    result.Specification = ParseSpecifications(text);
-
-                    // Extract usage type from dialog header: "4565 - مسكوني"
-                    try
-                    {
-                        var titleText = await _browser.GetTextAsync(".v-card__title", ct);
-                        if (!string.IsNullOrEmpty(titleText) && titleText.Contains("-"))
-                        {
-                            var parts = titleText.Split('-');
-                            if (parts.Length == 2)
-                            {
-                                result.Specification ??= new CaseSpecification();
-                                result.Specification.UsageType = parts[1].Trim();
-                            }
-                        }
-                    }
-                    catch { /* v-card__title not found */ }
+                    await WaitForDialogAsync(ct);
+                    result.Specification = await ExtractSpecificationsFromDialogAsync(ct);
                     await CloseDialogsAsync(ct);
                     await NavigateToTableIfNeededAsync(ct);
                 }
@@ -158,7 +154,7 @@ public sealed class CaseScraper : ICaseScraper
             catch { /* continue */ }
         }
 
-        // Scrape fees (column 9)
+        // Fees (column 9)
         row = await FindRowAsync(basicCase.Serial, ct);
         if (row != null)
         {
@@ -166,16 +162,16 @@ public sealed class CaseScraper : ICaseScraper
             {
                 if (await ClickCellButtonAsync(row, 9, ct))
                 {
-                    await Task.Delay(5000, ct);
-                    var text = await _browser.EvaluateAsync("document.body.innerText", ct);
-                    result.Fees = ParseFees(text);
+                    await WaitForDialogAsync(ct);
+                    result.Fees = await ExtractFeesFromDialogAsync(ct);
+                    await CloseDialogsAsync(ct);
                     await NavigateToTableIfNeededAsync(ct);
                 }
             }
             catch { /* continue */ }
         }
 
-        // Scrape reports (column 8)
+        // Reports (column 8) — already DOM-based, keep existing pattern with better waits
         row = await FindRowAsync(basicCase.Serial, ct);
         if (row != null)
         {
@@ -188,7 +184,7 @@ public sealed class CaseScraper : ICaseScraper
                     if (btn != null)
                     {
                         await btn.ClickAsync(ct);
-                        await Task.Delay(8000, ct);
+                        await _browser.WaitForSelectorAsync("table", TableTimeout, ct);
                         result.Reports = await ParseReportsAsync(ct);
                         await NavigateToTableAsync(ct);
                     }
@@ -212,7 +208,6 @@ public sealed class CaseScraper : ICaseScraper
     }
 
     // ========================= Private helpers =========================
-
 
     /// <summary>
     /// Scrape details with selective options (what to extract).
@@ -241,14 +236,16 @@ public sealed class CaseScraper : ICaseScraper
             {
                 if (await ClickCellButtonAsync(row, 10, ct))
                 {
-                    await Task.Delay(5000, ct);
-                    var text = await _browser.EvaluateAsync("document.body.innerText", ct);
-                    result.Engineers = ParseEngineers(text);
+                    await WaitForDialogAsync(ct);
+                    result.Engineers = await ExtractEngineersFromDialogAsync(ct);
                     await CloseDialogsAsync(ct);
                     await NavigateToTableIfNeededAsync(ct);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[EXTRACTION] Engineers failed for {basicCase.CaseNumber}: {ex.Message}");
+            }
         }
 
         // Specifications
@@ -261,31 +258,16 @@ public sealed class CaseScraper : ICaseScraper
                 {
                     if (await ClickCellButtonAsync(row, 11, ct))
                     {
-                        await Task.Delay(5000, ct);
-                        var text = await _browser.EvaluateAsync("document.body.innerText", ct);
-                        result.Specification = ParseSpecifications(text);
-
-                        // Extract usage type from dialog header: "4565 - مسكوني"
-                        try
-                        {
-                            var titleText = await _browser.GetTextAsync(".v-card__title", ct);
-                            if (!string.IsNullOrEmpty(titleText) && titleText.Contains("-"))
-                            {
-                                var parts = titleText.Split('-');
-                                if (parts.Length == 2)
-                                {
-                                    result.Specification ??= new CaseSpecification();
-                                    result.Specification.UsageType = parts[1].Trim();
-                                }
-                            }
-                        }
-                        catch { /* v-card__title not found */ }
-
+                        await WaitForDialogAsync(ct);
+                        result.Specification = await ExtractSpecificationsFromDialogAsync(ct);
                         await CloseDialogsAsync(ct);
                         await NavigateToTableIfNeededAsync(ct);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[EXTRACTION] Specs failed for {basicCase.CaseNumber}: {ex.Message}");
+                }
             }
         }
 
@@ -299,13 +281,16 @@ public sealed class CaseScraper : ICaseScraper
                 {
                     if (await ClickCellButtonAsync(row, 9, ct))
                     {
-                        await Task.Delay(5000, ct);
-                        var text = await _browser.EvaluateAsync("document.body.innerText", ct);
-                        result.Fees = ParseFees(text);
+                        await WaitForDialogAsync(ct);
+                        result.Fees = await ExtractFeesFromDialogAsync(ct);
+                        await CloseDialogsAsync(ct);
                         await NavigateToTableIfNeededAsync(ct);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[EXTRACTION] Fees failed for {basicCase.CaseNumber}: {ex.Message}");
+                }
             }
         }
 
@@ -324,13 +309,16 @@ public sealed class CaseScraper : ICaseScraper
                         if (btn != null)
                         {
                             await btn.ClickAsync(ct);
-                            await Task.Delay(8000, ct);
+                            await _browser.WaitForSelectorAsync("table", TableTimeout, ct);
                             result.Reports = await ParseReportsAsync(ct);
                             await NavigateToTableAsync(ct);
                         }
                     }
                 }
-                catch { /* report error ignored */ }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[EXTRACTION] Reports failed for {basicCase.CaseNumber}: {ex.Message}");
+                }
             }
         }
 
@@ -339,7 +327,6 @@ public sealed class CaseScraper : ICaseScraper
 
     /// <summary>
     /// Full extraction with options: start-from, selective data, pause/resume.
-    /// Returns (cases extracted so far, last index).
     /// </summary>
     public async Task<(List<Case> Cases, int LastIndex)> ExtractWithOptionsAsync(
         ExtractionOptions options,
@@ -358,15 +345,12 @@ public sealed class CaseScraper : ICaseScraper
             ? Math.Min(startIdx + options.MaxCases, total)
             : total;
 
-
         for (int i = startIdx; i < endIdx; i++)
         {
             ct.ThrowIfCancellationRequested();
-
-            // Wait if paused
             options.PauseEvent?.Wait(ct);
 
-            // Re-query rows since navigation invalidates references
+            // Re-query rows after navigation/dialog close
             rows = await GetRowsAsync(ct);
             if (i >= rows.Count) break;
 
@@ -391,7 +375,6 @@ public sealed class CaseScraper : ICaseScraper
                 Office = cells.Count > 6 ? cells[6] : "",
             };
 
-            // Filter: skip complete cases if requested
             if (options.FilterIncompleteOnly)
             {
                 var specOk = !options.ExtractSpecifications || db?.LoadSpecificationForCase(basicCase.CaseNumber) != null;
@@ -410,23 +393,19 @@ public sealed class CaseScraper : ICaseScraper
             {
                 var detailed = await ScrapeCaseDetailsWithOptionsAsync(basicCase, options, ct);
 
-                // For specs: skip if UpdateAllSpecifications is false and spec is already complete
                 if (!options.UpdateAllSpecifications && detailed.Specification != null)
                 {
-                    // Check if spec is already complete (has key fields filled)
                     var s = detailed.Specification;
                     bool isComplete = !string.IsNullOrEmpty(s.BuildingGroup)
                         && !string.IsNullOrEmpty(s.PermitNumber)
                         && !string.IsNullOrEmpty(s.StructureType);
                     if (isComplete)
                     {
-                        detailed.Specification = null; // Already complete, don't overwrite
+                        detailed.Specification = null;
                     }
                 }
 
                 cases.Add(detailed);
-
-                // Incremental save
                 incrementalSaveCallback?.Invoke(cases);
                 statusCallback?.Invoke($"  OK: {owner} ({cases.Count} extracted)");
             }
@@ -435,13 +414,254 @@ public sealed class CaseScraper : ICaseScraper
                 statusCallback?.Invoke($"  FAIL: {owner} - {ex.Message}");
             }
 
-            // Delay between cases
             if (options.DelayBetweenCasesMs > 0 && i < endIdx - 1)
                 await Task.Delay(options.DelayBetweenCasesMs, ct);
         }
 
         return (cases, endIdx >= total ? total - 1 : endIdx - 1);
     }
+
+    // ========================= DOM Extraction Helpers =========================
+
+    /// <summary>
+    /// Wait for a Vuetify dialog to appear and be visible.
+    /// </summary>
+    private async Task WaitForDialogAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _browser.WaitForSelectorAsync(".v-dialog--active", DialogTimeout, ct);
+        }
+        catch
+        {
+            // Fallback: try alternate dialog selectors
+            try
+            {
+                await _browser.WaitForSelectorAsync(".v-dialog__content--active", DialogTimeout, ct);
+            }
+            catch
+            {
+                // Last resort: small delay
+                await Task.Delay(FallbackDelayMs, ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extract engineers from the active dialog using DOM label-value pairs.
+    /// Falls back to body.innerText + Regex if DOM extraction fails.
+    /// </summary>
+    private async Task<List<Engineer>> ExtractEngineersFromDialogAsync(CancellationToken ct)
+    {
+        try
+        {
+            // Primary: extract from dialog DOM
+            var engineers = new List<Engineer>();
+            var disciplines = new[] {
+                ("معماری", "معماري"),
+                ("عمران", "عمران"),
+                ("مکانیک", "مكانيك"),
+                ("برق", "برق"),
+                ("هماهنگ‌کننده", "هماهنگ"),
+            };
+
+            var dialogText = await _browser.GetTextAsync(".v-dialog--active", ct);
+            if (string.IsNullOrWhiteSpace(dialogText))
+            {
+                // Try alternate dialog selector
+                dialogText = await _browser.GetTextAsync(".v-dialog__content--active", ct);
+            }
+
+            if (!string.IsNullOrWhiteSpace(dialogText))
+            {
+                foreach (var (disciplineEn, patternPrefix) in disciplines)
+                {
+                    var match = Regex.Match(dialogText, $@"{patternPrefix}\s*:\s*\n?\s*(.+)");
+                    if (match.Success)
+                    {
+                        var value = match.Groups[1].Value.Trim().Split('\n')[0].Trim();
+                        if (!value.Contains(':'))
+                        {
+                            engineers.Add(new Engineer(disciplineEn, value));
+                        }
+                    }
+                }
+            }
+
+            if (engineers.Count > 0)
+                return engineers;
+        }
+        catch { }
+
+        // Fallback: body.innerText + Regex (legacy)
+        try
+        {
+            var text = await _browser.EvaluateAsync("document.body.innerText", ct);
+            return ParseEngineers(text);
+        }
+        catch { return new List<Engineer>(); }
+    }
+
+    /// <summary>
+    /// Extract specifications from the active dialog using DOM.
+    /// Gets UsageType from .v-card__title, other fields from label-value pairs.
+    /// </summary>
+    private async Task<CaseSpecification?> ExtractSpecificationsFromDialogAsync(CancellationToken ct)
+    {
+        var specs = new CaseSpecification();
+        bool found = false;
+
+        try
+        {
+            // Extract UsageType from dialog title: "4565 - مسكوني"
+            try
+            {
+                var titleText = await _browser.GetTextAsync(".v-card__title", ct);
+                if (!string.IsNullOrEmpty(titleText) && titleText.Contains("-"))
+                {
+                    var parts = titleText.Split('-');
+                    if (parts.Length == 2)
+                    {
+                        specs.UsageType = parts[1].Trim();
+                        found = true;
+                    }
+                }
+            }
+            catch { /* v-card__title not found */ }
+
+            // Extract all label-value pairs from the dialog
+            var dialogText = await _browser.GetTextAsync(".v-dialog--active", ct);
+            if (string.IsNullOrWhiteSpace(dialogText))
+            {
+                try { dialogText = await _browser.GetTextAsync(".v-dialog__content--active", ct); }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(dialogText))
+            {
+                var fieldPatterns = new (string field, string pattern)[]
+                {
+                    (nameof(CaseSpecification.BuildingGroup), @"گروه ساختمان[یي]\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.RenovationCode), @"کد نوساز[یي]\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.PlanInstructionNo), @"شماره دستور تهیه نقشه\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.PlanInstructionType), @"نوع دستور تهیه نقشه\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.LandArea), @"مساحت زمین\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.ParafArea), @"متراژ پاراف\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.PlanInstructionDate), @"تاریخ دستور تهیه نقشه\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.StructureType), @"نوع سازه\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.BlockTitle), @"عنوان بلوک\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.BlockCount), @"تعداد بلوک\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.Floors), @"تعداد طبقات\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.Units), @"تعداد واحد\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.Issuer), @"صادر کننده\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.PermitNumber), @"شماره پروانه\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.PermitDate), @"تاریخ صدور پروانه\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.ReleaseDate), @"تاریخ ترخیص\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.PlanZone), @"محدوده طرح\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.Address), @"آدرس\s*:\s*\n?\s*(.+)"),
+                    (nameof(CaseSpecification.CapacityArea), @"متراژ کسر ظرفیت\s*[^:]*:\s*\n?\s*([\d.,]+)"),
+                };
+
+                foreach (var (field, pattern) in fieldPatterns)
+                {
+                    var match = Regex.Match(dialogText, pattern);
+                    if (match.Success)
+                    {
+                        var value = match.Groups[1].Value.Trim().Split('\n')[0].Trim();
+                        typeof(CaseSpecification).GetProperty(field)?.SetValue(specs, value);
+                        found = true;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback: body.innerText + legacy regex
+            try
+            {
+                var text = await _browser.EvaluateAsync("document.body.innerText", ct);
+                return ParseSpecifications(text);
+            }
+            catch { return null; }
+        }
+
+        return found ? specs : null;
+    }
+
+    /// <summary>
+    /// Extract fees from the active dialog using DOM table extraction.
+    /// </summary>
+    private async Task<List<Fee>> ExtractFeesFromDialogAsync(CancellationToken ct)
+    {
+        try
+        {
+            var fees = new List<Fee>();
+
+            // Try to find a table inside the dialog
+            var dialogTables = await _browser.QuerySelectorAllAsync(".v-dialog--active table", ct);
+            if (dialogTables.Count == 0)
+            {
+                try
+                {
+                    dialogTables = await _browser.QuerySelectorAllAsync(".v-dialog__content--active table", ct);
+                }
+                catch { }
+            }
+
+            if (dialogTables.Count > 0)
+            {
+                var table = dialogTables[0];
+                var rows = await table.QuerySelectorAllAsync("tr");
+                bool headerPassed = false;
+
+                foreach (var row in rows)
+                {
+                    var tds = await row.QuerySelectorAllAsync("td");
+                    if (tds.Count < 7) 
+                    {
+                        // Check if this is a header row
+                        var headerText = await row.GetTextAsync();
+                        if (headerText.Contains("رشته") || headerText.Contains("مرحله"))
+                            headerPassed = true;
+                        continue;
+                    }
+
+                    var cells = new List<string>();
+                    foreach (var td in tds)
+                    {
+                        cells.Add((await td.GetTextAsync()).Trim());
+                    }
+
+                    // Fee row structure: discipline, serviceType, [skip], stage, startDate, endDate, amount, payStatus, confirmStatus, amountType, description
+                    fees.Add(new Fee(
+                        cells.Count > 0 ? cells[0] : "",    // discipline
+                        cells.Count > 1 ? cells[1] : "",    // serviceType
+                        cells.Count > 6 ? cells[6] : "",    // stage
+                        cells.Count > 3 ? cells[3] : "",    // startDate
+                        cells.Count > 4 ? cells[4] : "",    // endDate
+                        cells.Count > 5 ? cells[5] : "",    // amount
+                        cells.Count > 7 ? cells[7] : "",    // payStatus
+                        cells.Count > 8 ? cells[8] : "",    // confirmStatus
+                        cells.Count > 9 ? cells[9] : ""     // amountType
+                    ));
+                }
+
+                if (fees.Count > 0)
+                    return fees;
+            }
+        }
+        catch { }
+
+        // Fallback: body.innerText parsing
+        try
+        {
+            var text = await _browser.EvaluateAsync("document.body.innerText", ct);
+            return ParseFees(text);
+        }
+        catch { return new List<Fee>(); }
+    }
+
+    // ========================= Table / Row Helpers =========================
 
     private async Task<List<IBrowserElement>> GetRowsAsync(CancellationToken ct)
     {
@@ -507,28 +727,8 @@ public sealed class CaseScraper : ICaseScraper
                 if (btn != null)
                 {
                     await btn.ClickAsync(ct);
-                    await Task.Delay(5000, ct);
                     return true;
                 }
-            }
-        }
-        catch { }
-        return false;
-    }
-
-    /// <summary>
-    /// Click the last button in a table row (for specs dialog).
-    /// </summary>
-    private async Task<bool> ClickLastRowButtonAsync(IBrowserElement row, CancellationToken ct)
-    {
-        try
-        {
-            var buttons = await row.QuerySelectorAllAsync("button");
-            if (buttons.Count >= 1)
-            {
-                await buttons[^1].ClickAsync(ct);
-                await Task.Delay(5000, ct);
-                return true;
             }
         }
         catch { }
@@ -595,7 +795,7 @@ public sealed class CaseScraper : ICaseScraper
         return reports;
     }
 
-    // ========================= Text parsers =========================
+    // ========================= Legacy Text Parsers (fallback only) =========================
 
     public static List<Engineer> ParseEngineers(string text)
     {
@@ -629,24 +829,24 @@ public sealed class CaseScraper : ICaseScraper
         var specs = new CaseSpecification();
         var patterns = new (string field, string pattern)[]
         {
-            (nameof(CaseSpecification.BuildingGroup), @"گروه ساختمان[یي]\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.RenovationCode), @"کد نوساز[یي]\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.PlanInstructionNo), @"شماره دستور تهیه نقشه\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.PlanInstructionType), @"نوع دستور تهیه نقشه\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.LandArea), @"مساحت زمین\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.ParafArea), @"متراژ پاراف\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.PlanInstructionDate), @"تاریخ دستور تهیه نقشه\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.StructureType), @"نوع سازه\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.BlockTitle), @"عنوان بلوک\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.BlockCount), @"تعداد بلوک\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.Floors), @"تعداد طبقات\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.Units), @"تعداد واحد\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.Issuer), @"صادر کننده\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.PermitNumber), @"شماره پروانه\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.PermitDate), @"تاریخ صدور پروانه\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.ReleaseDate), @"تاریخ ترخیص\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.PlanZone), @"محدوده طرح\s*:\s*\n\s*(.+)"),
-            (nameof(CaseSpecification.Address), @"آدرس\s*:\s*\n\s*(.+)"),
+            (nameof(CaseSpecification.BuildingGroup), @"گروه ساختمان[یي]\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.RenovationCode), @"کد نوساز[یي]\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.PlanInstructionNo), @"شماره دستور تهیه نقشه\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.PlanInstructionType), @"نوع دستور تهیه نقشه\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.LandArea), @"مساحت زمین\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.ParafArea), @"متراژ پاراف\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.PlanInstructionDate), @"تاریخ دستور تهیه نقشه\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.StructureType), @"نوع سازه\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.BlockTitle), @"عنوان بلوک\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.BlockCount), @"تعداد بلوک\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.Floors), @"تعداد طبقات\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.Units), @"تعداد واحد\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.Issuer), @"صادر کننده\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.PermitNumber), @"شماره پروانه\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.PermitDate), @"تاریخ صدور پروانه\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.ReleaseDate), @"تاریخ ترخیص\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.PlanZone), @"محدوده طرح\s*:\s*\n?\s*(.+)"),
+            (nameof(CaseSpecification.Address), @"آدرس\s*:\s*\n?\s*(.+)"),
             (nameof(CaseSpecification.CapacityArea), @"متراژ کسر ظرفیت\s*[^:]*:\s*\n?\s*([\d.,]+)"),
             (nameof(CaseSpecification.UsageType), @"نوع کاربری\s*:\s*\n?\s*(.+)"),
         };
