@@ -630,6 +630,8 @@ public sealed class CaseScraper : ICaseScraper
             (nameof(CaseSpecification.ReleaseDate), @"تاریخ ترخیص\s*:\s*\n\s*(.+)"),
             (nameof(CaseSpecification.PlanZone), @"محدوده طرح\s*:\s*\n\s*(.+)"),
             (nameof(CaseSpecification.Address), @"آدرس\s*:\s*\n\s*(.+)"),
+            (nameof(CaseSpecification.CapacityArea), @"متراژ کسر ظرفیت\s*[^:]*:\s*\n?\s*([\d.,]+)"),
+            (nameof(CaseSpecification.UsageType), @"نوع کاربری\s*:\s*\n\s*(.+)"),
         };
 
         bool found = false;
