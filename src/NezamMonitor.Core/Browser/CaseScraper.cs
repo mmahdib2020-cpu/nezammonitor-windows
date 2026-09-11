@@ -264,6 +264,23 @@ public sealed class CaseScraper : ICaseScraper
                         await Task.Delay(5000, ct);
                         var text = await _browser.EvaluateAsync("document.body.innerText", ct);
                         result.Specification = ParseSpecifications(text);
+
+                        // Extract usage type from dialog header: "4565 - مسكوني"
+                        try
+                        {
+                            var titleText = await _browser.GetTextAsync(".v-card__title", ct);
+                            if (!string.IsNullOrEmpty(titleText) && titleText.Contains("-"))
+                            {
+                                var parts = titleText.Split('-');
+                                if (parts.Length == 2)
+                                {
+                                    result.Specification ??= new CaseSpecification();
+                                    result.Specification.UsageType = parts[1].Trim();
+                                }
+                            }
+                        }
+                        catch { /* v-card__title not found */ }
+
                         await CloseDialogsAsync(ct);
                         await NavigateToTableIfNeededAsync(ct);
                     }
