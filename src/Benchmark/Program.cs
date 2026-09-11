@@ -1,124 +1,94 @@
 using System.Diagnostics;
-using NezamMonitor.Core.Browser;
+using NezamMonitor.Core.Api;
 using NezamMonitor.Core.Models;
 
-// ============================================================
-// EXTRACTION BENCHMARK — Phase 0 Baseline
-// ============================================================
-// This tool measures extraction timing for the CURRENT implementation.
-// It requires a running Playwright browser and valid credentials.
-// ============================================================
+if (args.Length < 2) { Console.WriteLine("Usage: dotnet run -- <user> <pass> [maxCases]"); return; }
 
-var baseUrl = "http://service.yazdnezam.ir:8033";
-var username = Environment.GetEnvironmentVariable("NEZAM_USER") ?? "";
-var password = Environment.GetEnvironmentVariable("NEZAM_PASS") ?? "";
+var username = args[0];
+var password = args[1];
+int maxCases = args.Length > 2 ? int.Parse(args[2]) : 0;
 
-if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-{
-    Console.WriteLine("ERROR: Set NEZAM_USER and NEZAM_PASS environment variables");
-    Console.WriteLine("Usage: NEZAM_USER=xxx NEZAM_PASS=yyy dotnet run");
-    return;
-}
-
-int maxCases = int.TryParse(Environment.GetEnvironmentVariable("MAX_CASES"), out var m) ? m : 1;
-
-Console.WriteLine("=== EXTRACTION BENCHMARK ===");
-Console.WriteLine($"Max cases: {maxCases}");
-Console.WriteLine($"Base URL: {baseUrl}");
+Console.WriteLine("=== API EXTRACTION BENCHMARK ===");
+Console.WriteLine($"Max cases: {(maxCases == 0 ? "ALL" : maxCases.ToString())}");
 Console.WriteLine();
 
-var sw = Stopwatch.StartNew();
+var totalSw = Stopwatch.StartNew();
 
-// Launch browser
-Console.WriteLine("[1] Launching browser...");
-var browser = new PlaywrightBrowser();
-await browser.LaunchAsync(headless: false);
-
-var scraper = new CaseScraper(browser);
-
-// Login
-Console.WriteLine("[2] Logging in...");
+// LOGIN
+Console.WriteLine("[1] Login...");
 var loginSw = Stopwatch.StartNew();
-var loginOk = await scraper.LoginAsync(username, password);
+using var api = new NezamApiClient();
+var loginOk = await api.LoginAsync(username, password);
 loginSw.Stop();
 Console.WriteLine($"    Login: {(loginOk ? "OK" : "FAILED")} ({loginSw.ElapsedMilliseconds}ms)");
-if (!loginOk) { await browser.DisposeAsync(); return; }
+if (!loginOk) return;
+Console.WriteLine($"    userId={api.UserId}, cityId={api.CityId}");
 
-// Navigate to table
-Console.WriteLine("[3] Navigating to table...");
-var navSw = Stopwatch.StartNew();
-await scraper.NavigateToTableAsync();
-navSw.Stop();
-Console.WriteLine($"    Navigation: {navSw.ElapsedMilliseconds}ms");
+// GET CASES
+Console.WriteLine("[2] Getting case list...");
+var caseSw = Stopwatch.StartNew();
+var apiCases = await api.GetCasesRawAsync();
+caseSw.Stop();
+Console.WriteLine($"    Cases: {apiCases.Count} ({caseSw.ElapsedMilliseconds}ms)");
 
-// Get initial row count
-var initRows = await browser.QuerySelectorAllAsync("table tbody tr");
-Console.WriteLine($"    Table rows: {initRows.Count}");
+// GET ENGINEERS + FEES
+Console.WriteLine($"[3] Getting engineers + fees...");
+var extractSw = Stopwatch.StartNew();
+var allCases = new List<Case>();
+int engTotal = 0, feeTotal = 0, errors = 0;
 
-// Extract cases
-Console.WriteLine($"[4] Extracting {maxCases} case(s)...");
-var options = new ExtractionOptions
+var casesToProcess = maxCases > 0 ? apiCases.Take(maxCases).ToList() : apiCases;
+foreach (var apiCase in casesToProcess)
 {
-    MaxCases = maxCases,
-    StartFromIndex = 0,
-    ExtractEngineers = true,
-    ExtractFees = true,
-    ExtractSpecifications = true,
-    ExtractReports = true,
-    UpdateAllSpecifications = true,
-    FilterIncompleteOnly = false,
-    DelayBetweenCasesMs = 0,
-};
-
-var extractionSw = Stopwatch.StartNew();
-var (cases, _) = await scraper.ExtractWithOptionsAsync(
-    options,
-    msg => Console.WriteLine($"    {msg}"),
-    (cur, total) => { },
-    null);
-extractionSw.Stop();
-
-sw.Stop();
-
-// Results
-Console.WriteLine();
-Console.WriteLine("=== BASELINE RESULTS ===");
-Console.WriteLine($"Total time: {sw.ElapsedMilliseconds}ms ({sw.Elapsed.TotalSeconds:F1}s)");
-Console.WriteLine($"Login time: {loginSw.ElapsedMilliseconds}ms");
-Console.WriteLine($"Navigation time: {navSw.ElapsedMilliseconds}ms");
-Console.WriteLine($"Extraction time: {extractionSw.ElapsedMilliseconds}ms ({extractionSw.TotalSeconds:F1}s)");
-Console.WriteLine();
-Console.WriteLine($"Cases extracted: {cases.Count}");
-
-var totalEngineers = cases.Sum(c => c.Engineers.Count);
-var totalFees = cases.Sum(c => c.Fees.Count);
-var totalReports = cases.Sum(c => c.Reports.Count);
-var casesWithSpecs = cases.Count(c => c.Specification != null);
-var casesWithUsageType = cases.Count(c => c.Specification?.UsageType == "مسكوني" || c.Specification?.UsageType == "مسکونی");
-
-Console.WriteLine($"Engineers total: {totalEngineers}");
-Console.WriteLine($"Fees total: {totalFees}");
-Console.WriteLine($"Reports total: {totalReports}");
-Console.WriteLine($"Cases with specs: {casesWithSpecs}/{cases.Count}");
-Console.WriteLine($"Cases with UsageType: {casesWithUsageType}/{cases.Count}");
-
-// Per-case breakdown
-if (cases.Count > 0)
-{
-    Console.WriteLine();
-    Console.WriteLine("=== PER-CASE DETAILS ===");
-    foreach (var c in cases)
+    try
     {
-        Console.WriteLine($"  {c.CaseNumber} | {c.Owner} | Engineers:{c.Engineers.Count} Fees:{c.Fees.Count} Reports:{c.Reports.Count} Spec:{(c.Specification != null ? "Y" : "N")} UsageType:{c.Specification?.UsageType ?? "EMPTY"}");
+        var caseModel = ApiExtractor.MapCase(apiCase);
+
+        var dbId = 0;
+        if (apiCase.TryGetValue("db_id", out var dbVal) && dbVal is int dbI) dbId = dbI;
+
+        var apiEngineers = await api.GetEngineersRawAsync(dbId);
+        caseModel.Engineers = ApiExtractor.MapEngineers(apiEngineers);
+        engTotal += caseModel.Engineers.Count;
+
+        var apiFees = await api.GetFeesRawAsync(dbId);
+        caseModel.Fees = ApiExtractor.MapFees(apiFees);
+        feeTotal += caseModel.Fees.Count;
+
+        allCases.Add(caseModel);
+    }
+    catch (Exception ex)
+    {
+        errors++;
+        Console.WriteLine($"    FAIL: {NezamApiClient.S(apiCase, "das_serial")} - {ex.Message}");
+    }
+}
+extractSw.Stop();
+totalSw.Stop();
+
+Console.WriteLine();
+Console.WriteLine("=== RESULTS ===");
+Console.WriteLine($"Total time: {totalSw.ElapsedMilliseconds}ms ({totalSw.Elapsed.TotalSeconds:F1}s)");
+Console.WriteLine($"Login: {loginSw.ElapsedMilliseconds}ms");
+Console.WriteLine($"Case list: {caseSw.ElapsedMilliseconds}ms");
+Console.WriteLine($"Extract (eng+fees): {extractSw.ElapsedMilliseconds}ms ({extractSw.Elapsed.TotalSeconds:F1}s)");
+Console.WriteLine();
+Console.WriteLine($"Cases: {allCases.Count}");
+Console.WriteLine($"Engineers total: {engTotal}");
+Console.WriteLine($"Fees total: {feeTotal}");
+Console.WriteLine($"Errors: {errors}");
+
+if (allCases.Count > 0)
+{
+    Console.WriteLine($"Avg per case: {extractSw.ElapsedMilliseconds / allCases.Count}ms");
+    Console.WriteLine();
+    foreach (var c in allCases.Take(5))
+    {
+        var spec = c.Specification;
+        Console.WriteLine($"{c.CaseNumber} | {c.Owner} | Eng:{c.Engineers.Count} Fees:{c.Fees.Count} Spec:{(spec != null ? "Y" : "N")} Usage:{spec?.UsageType ?? "EMPTY"}");
+        if (spec != null)
+            Console.WriteLine($"  Group={spec.BuildingGroup} Struct={spec.StructureType} Floors={spec.Floors} Permit={spec.PermitNumber} Cap={spec.CapacityArea} Addr={spec.Address}");
     }
 }
 
-if (cases.Count > 0)
-{
-    Console.WriteLine();
-    Console.WriteLine($"Average per case: {extractionSw.ElapsedMilliseconds / cases.Count}ms");
-}
-
-await browser.DisposeAsync();
-Console.WriteLine();
-Console.WriteLine("BENCHMARK COMPLETE");
+Console.WriteLine("\nDONE");
