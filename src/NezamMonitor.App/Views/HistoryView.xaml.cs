@@ -46,8 +46,8 @@ public partial class HistoryView : UserControl
         }
 
         var result = MessageBox.Show(
-            $"آیا از ادگام {selectedCount} اسنپ‌شات مطمئن هستید؟\n\nاسنپ‌شات جدید ایجاد می‌شود.",
-            "تأیید ادگام",
+            $"آیا از ادغام {selectedCount} اسنپ‌شات مطمئن هستید؟\n\nاسنپ‌شات جدید ایجاد می‌شود.",
+            "تأیید ادغام",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
         if (result == MessageBoxResult.Yes)

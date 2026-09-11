@@ -14,7 +14,7 @@
 
         <!-- Merge Button -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
-            <Button Content="🔄 ادگام انتخاب‌شده‌ها" Click="Merge_Click" Width="180" Height="35"
+            <Button Content="🔄 ادغام انتخاب‌شده‌ها" Click="Merge_Click" Width="180" Height="35"
                     Background="#8E44AD" Foreground="White" FontSize="{DynamicResource ButtonFontSize}" FontWeight="Bold"
                     Margin="0,0,10,0" Cursor="Hand"/>
             <TextBlock Text="☐ تیک اسنپ‌شات‌ها را بزنید" Foreground="#7F8C8D" FontSize="{DynamicResource LabelFontSize}"

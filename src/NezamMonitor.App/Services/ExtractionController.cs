@@ -144,13 +144,13 @@ public sealed class ExtractionController : ViewModelBase
                     },
                     incrementalCases =>
                     {
-                        // Save only the latest case to avoid duplicates
+                        // Log progress only - all data saved at the end by FinalizeSnapshot
                         try
                         {
                             if (incrementalCases.Count > 0)
                             {
-                                var lastCase = incrementalCases[incrementalCases.Count - 1];
-                                db.SaveSnapshot(snapshotId, new[] { lastCase });
+                                var last = incrementalCases[incrementalCases.Count - 1];
+                                AppendLog($"استخراج شد: {last.CaseNumber} — {last.Owner}");
                             }
                         }
                         catch { }
@@ -162,8 +162,14 @@ public sealed class ExtractionController : ViewModelBase
 
                 if (cases.Count > 0)
                 {
+                    db.SaveSnapshot(snapshotId, cases);
                     db.FinalizeSnapshot(snapshotId, cases.Count);
-                    AppendLog($"ذخیره شد (snapshot #{snapshotId}) ✓");
+                    db.SetActiveSnapshot(snapshotId);
+                    AppendLog($"ذخیره شد (snapshot #{snapshotId}) ✓ — {cases.Count} پرونده فعال شد");
+                }
+                else
+                {
+                    AppendLog("پرونده‌ای استخراج نشد");
                 }
 
                 StatusMessage = $"تکمیل — {cases.Count} پرونده";

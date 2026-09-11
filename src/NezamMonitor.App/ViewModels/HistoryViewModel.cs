@@ -61,7 +61,7 @@ public sealed class HistoryViewModel : ViewModelBase
         LoadSnapshots();
 
         var mergedCount = Snapshots.FirstOrDefault(s => s.Id == newId)?.CaseCount ?? 0;
-        StatusMessage = $"ادگام موفق ✓ → اسنپ‌شات #{newId} ({mergedCount} پرونده)";
+        StatusMessage = $"ادغام موفق ✓ → اسنپ‌شات #{newId} ({mergedCount} پرونده)";
         return StatusMessage;
     }
 
