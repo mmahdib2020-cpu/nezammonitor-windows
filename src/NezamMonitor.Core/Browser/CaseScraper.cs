@@ -842,6 +842,35 @@ public sealed class CaseScraper : ICaseScraper
         return cells;
     }
 
+    // ===== Public wrappers for reports fallback =====
+
+    /// <summary>Find a table row by serial for reports extraction.</summary>
+    public async Task<IBrowserElement?> FindRowForReportsAsync(string serial, CancellationToken ct = default)
+        => await FindRowAsync(serial, ct);
+
+    /// <summary>Click reports button on a row and extract report records.</summary>
+    public async Task<List<ReportRecord>> ExtractReportsFromRowAsync(IBrowserElement row, CancellationToken ct = default)
+    {
+        try
+        {
+            var tds = await row.QuerySelectorAllAsync("td");
+            if (tds.Count > 8)
+            {
+                var btn = await tds[8].QuerySelectorAsync("button");
+                if (btn != null)
+                {
+                    await btn.ClickAsync(ct);
+                    await _browser.WaitForSelectorAsync("table", TableTimeout, ct);
+                    var reports = await ParseReportsAsync(ct);
+                    await NavigateToTableAsync(ct);
+                    return reports;
+                }
+            }
+        }
+        catch { }
+        return new();
+    }
+
     private async Task<IBrowserElement?> FindRowAsync(string serial, CancellationToken ct)
     {
         var rows = await GetRowsAsync(ct);

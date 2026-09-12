@@ -85,8 +85,12 @@ public sealed class UpdateViewModel : ViewModelBase
             if (RememberMe)
             {
                 _db.SaveSetting("username", Username);
-                // Never save password - security
-                _db.SaveSetting("password", "");
+                _db.SaveSetting("password", Password);
+                _db.SaveSetting("remember_me", "true");
+            }
+            else
+            {
+                _db.SaveSetting("remember_me", "false");
             }
 
             AppendLog("شروع همگام‌سازی...");

@@ -33,8 +33,7 @@
                         <TextBlock Grid.Column="2" Text="رمز عبور:" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <PasswordBox Grid.Column="3" x:Name="PasswordBox" PasswordChanged="PasswordBox_PasswordChanged"/>
                     </Grid>
-                    <CheckBox Content="مرا به خاطر بسپار (فقط نام کاربری)"
-                              IsChecked="{Binding RememberMe}" Margin="0,8,0,0" FontSize="{DynamicResource LabelFontSize}"/>
+                    <CheckBox Content="🔑 ذخیره اطلاعات ورود" IsChecked="{Binding RememberMe}" Margin="0,8,0,0" FontSize="{DynamicResource LabelFontSize}"/>
                 </StackPanel>
             </Border>
 
@@ -52,13 +51,7 @@
                                  Width="80" Height="28" VerticalContentAlignment="Center" Margin="0,0,5,0"/>
                         <TextBlock Text="(0=همه)" Foreground="Gray" FontSize="{DynamicResource LabelFontSize}" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="فیلدهای استخراجی:" FontWeight="Bold" Margin="0,5,0,5"/>
-                    <WrapPanel Margin="10,0,0,0">
-                        <CheckBox Content="👷 ناظرین" IsChecked="{Binding ExtractEngineers, Source={x:Static srv:ExtractionController.Instance}}" Margin="0,0,20,5" FontSize="{DynamicResource FontSize}"/>
-                        <CheckBox Content="💰 حق‌الزحمه" IsChecked="{Binding ExtractFees, Source={x:Static srv:ExtractionController.Instance}}" Margin="0,0,20,5" FontSize="{DynamicResource FontSize}"/>
-                        <CheckBox Content="📋 مشخصات" IsChecked="{Binding ExtractSpecifications, Source={x:Static srv:ExtractionController.Instance}}" Margin="0,0,20,5" FontSize="{DynamicResource FontSize}"/>
-                        <CheckBox Content="📄 گزارش‌ها" IsChecked="{Binding ExtractReports, Source={x:Static srv:ExtractionController.Instance}}" Margin="0,0,20,5" FontSize="{DynamicResource FontSize}"/>
-                    </WrapPanel>
+
                     <CheckBox Content="🔍 فقط پرونده‌های ناقص (بدون مشخصات/گزارش/ناظرین/حق‌الزحمه)"
                               IsChecked="{Binding FilterIncompleteOnly, Source={x:Static srv:ExtractionController.Instance}}"
                               Margin="0,8,0,5" FontSize="{DynamicResource FontSize}"/>
@@ -73,7 +66,21 @@
                 </StackPanel>
             </Border>
 
-            <!-- 3. Buttons — ALWAYS visible, SAME style -->
+            <!-- 3. Report File Options -->
+            <Border Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15"
+                    BorderBrush="#BDC3C7" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="📁 گزینه‌های فایل" FontSize="{DynamicResource FontSize}" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="مسیر ذخیره فایل‌ها:" VerticalAlignment="Center" Width="120"/>
+                        <TextBox Text="{Binding OutputPath, UpdateSourceTrigger=PropertyChanged}" Width="400" Height="28" VerticalContentAlignment="Center" Margin="0,0,10,0"/>
+                        <Button Content="📁 انتخاب" Width="80" Height="28" Click="BtnBrowseOutput_Click"/>
+                    </StackPanel>
+                    <CheckBox Content="📥 دانلود فایل‌های گزارش (تصاویر/PDF)" IsChecked="{Binding ExtractReportFiles}" Margin="0,0,0,5" FontSize="{DynamicResource FontSize}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 4. Buttons -->
             <Border Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15"
                     BorderBrush="#BDC3C7" BorderThickness="1">
                 <WrapPanel>
@@ -103,7 +110,7 @@
                 </WrapPanel>
             </Border>
 
-            <!-- 4. Progress -->
+            <!-- 5. Progress -->
             <Grid Margin="0,0,0,15">
                 <ProgressBar x:Name="ProgressBar" Height="20" Maximum="100"
                              Foreground="#2ECC71" Background="#ECF0F1" BorderThickness="0"/>
@@ -111,7 +118,7 @@
                            FontSize="{DynamicResource LabelFontSize}" FontWeight="Bold"/>
             </Grid>
 
-            <!-- 5. Log -->
+            <!-- 6. Log -->
             <Border Background="#2C3E50" CornerRadius="8" Padding="10">
                 <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
                     <TextBlock x:Name="LogText" Foreground="#ECF0F1" FontFamily="Consolas"

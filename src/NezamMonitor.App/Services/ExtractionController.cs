@@ -1,14 +1,16 @@
+using System.IO;
 using NezamMonitor.App.ViewModels;
 using System.Threading;
 using System.Windows.Input;
+using NezamMonitor.Core.Api;
 using NezamMonitor.Core.Browser;
 using NezamMonitor.Core.Data;
+using NezamMonitor.Core.Models;
 
 namespace NezamMonitor.App.Services;
 
 /// <summary>
-/// Singleton extraction controller shared between MainWindow and UpdateView.
-/// Provides commands for Start, Stop, Pause/Resume, LoadLatest.
+/// Extraction controller — API-first with Playwright fallback for Reports.
 /// </summary>
 public sealed class ExtractionController : ViewModelBase
 {
@@ -51,6 +53,10 @@ public sealed class ExtractionController : ViewModelBase
     public bool ExtractSpecifications { get => _extractSpecifications; set => SetProperty(ref _extractSpecifications, value); }
     private bool _extractReports = true;
     public bool ExtractReports { get => _extractReports; set => SetProperty(ref _extractReports, value); }
+    private bool _extractReportFiles = false;
+    public bool ExtractReportFiles { get => _extractReportFiles; set => SetProperty(ref _extractReportFiles, value); }
+    private string _outputPath = "";
+    public string OutputPath { get => _outputPath; set => SetProperty(ref _outputPath, value); }
     private bool _updateAllSpecifications = true;
     public bool UpdateAllSpecifications { get => _updateAllSpecifications; set => SetProperty(ref _updateAllSpecifications, value); }
     private int _startFromIndex = 1;
@@ -90,94 +96,35 @@ public sealed class ExtractionController : ViewModelBase
             if (settings.TryGetValue("username", out var u)) username = u;
             if (settings.TryGetValue("password", out var p)) password = p;
 
-            AppendLog("شروع استخراج...");
-            StatusMessage = "در حال راه‌اندازی مرورگر...";
+            AppendLog("شروع استخراج API...");
 
-            PlaywrightBrowser? browser = null;
-            try
+            var startTime = DateTime.Now;
+            var cases = await ExtractViaApiAsync(username, password, db);
+
+            // Download report files
+            if (cases.Count > 0 && ExtractReportFiles)
             {
-                browser = new PlaywrightBrowser();
-                await browser.LaunchAsync(headless: false);
-                AppendLog("مرورگر راه‌اندازی شد ✓");
+                AppendLog("دانلود فایل‌های گزارش‌ها...");
+                await DownloadReportFilesAsync(cases, username, password);
+            }
 
-                var scraper = new CaseScraper(browser);
-                StatusMessage = "در حال ورود...";
-                var loginOk = await scraper.LoginAsync(username, password);
-                if (!loginOk)
-                {
-                    AppendLog("خطا: ورود ناموفق");
-                    StatusMessage = "ورود ناموفق";
-                    return;
-                }
+            var elapsed = DateTime.Now - startTime;
+            AppendLog($"تکمیل: {cases.Count} پرونده در {elapsed.TotalSeconds:F0} ثانیه");
 
-                AppendLog("ورود موفق ✓");
-                await scraper.NavigateToTableAsync();
-                AppendLog("ناوبری به جدول موفق ✓");
-
-                var options = new ExtractionOptions
-                {
-                    StartFromIndex = StartFromIndex,
-                    MaxCases = MaxCases,
-                    ExtractEngineers = ExtractEngineers,
-                    ExtractFees = ExtractFees,
-                    ExtractSpecifications = ExtractSpecifications,
-                    UpdateAllSpecifications = UpdateAllSpecifications,
-                    ExtractReports = ExtractReports,
-                    CancellationTokenSource = _cts,
-                    PauseEvent = _pauseEvent,
-                    FilterIncompleteOnly = FilterIncompleteOnly,
-                };
-
-                StatusMessage = "در حال استخراج...";
-                var startTime = DateTime.Now;
-
+            if (cases.Count > 0)
+            {
                 var snapshotId = db.CreateSnapshot(startTime);
-                var (cases, lastIndex) = await scraper.ExtractWithOptionsAsync(
-                    options,
-                    msg => AppendLog(msg),
-                    (current, total) =>
-                    {
-                        Progress = (double)current / total * 100;
-                        StatusMessage = IsPaused
-                            ? $"متوقف شده — {current}/{total}"
-                            : $"استخراج {current}/{total}";
-                    },
-                    incrementalCases =>
-                    {
-                        // Log progress only - all data saved at the end by FinalizeSnapshot
-                        try
-                        {
-                            if (incrementalCases.Count > 0)
-                            {
-                                var last = incrementalCases[incrementalCases.Count - 1];
-                                AppendLog($"استخراج شد: {last.CaseNumber} — {last.Owner}");
-                            }
-                        }
-                        catch { }
-                    },
-                    db);
-
-                var elapsed = DateTime.Now - startTime;
-                AppendLog($"تکمیل: {cases.Count} پرونده در {elapsed.TotalSeconds:F0} ثانیه");
-
-                if (cases.Count > 0)
-                {
-                    db.SaveSnapshot(snapshotId, cases);
-                    db.FinalizeSnapshot(snapshotId, cases.Count);
-                    db.SetActiveSnapshot(snapshotId);
-                    AppendLog($"ذخیره شد (snapshot #{snapshotId}) ✓ — {cases.Count} پرونده فعال شد");
-                }
-                else
-                {
-                    AppendLog("پرونده‌ای استخراج نشد");
-                }
-
-                StatusMessage = $"تکمیل — {cases.Count} پرونده";
+                db.SaveSnapshot(snapshotId, cases);
+                db.FinalizeSnapshot(snapshotId, cases.Count);
+                db.SetActiveSnapshot(snapshotId);
+                AppendLog($"ذخیره شد (snapshot #{snapshotId}) ✓ — {cases.Count} پرونده فعال شد");
             }
-            finally
+            else
             {
-                browser?.Dispose();
+                AppendLog("پرونده‌ای استخراج نشد");
             }
+
+            StatusMessage = $"تکمیل — {cases.Count} پرونده";
         }
         catch (OperationCanceledException)
         {
@@ -201,6 +148,199 @@ public sealed class ExtractionController : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// PRIMARY PATH: API-based extraction.
+    /// Login → Case list → Engineers → Fees.
+    /// Returns list of Cases with specs, engineers, fees populated.
+    /// Reports NOT included (no API endpoint found).
+    /// </summary>
+    private async Task<List<Case>> ExtractViaApiAsync(string username, string password, NezamDatabase db)
+    {
+        var cases = new List<Case>();
+
+        try
+        {
+            // Login
+            StatusMessage = "ورود به سیستم...";
+            using var api = new NezamApiClient();
+            var loginOk = await api.LoginAsync(username, password);
+            if (!loginOk)
+            {
+                AppendLog("خطا: ورود API ناموفق");
+                return cases;
+            }
+            AppendLog($"ورود API موفق ✓ (userId={api.UserId})");
+
+            // Get all cases
+            StatusMessage = "دریافت لیست پرونده‌ها...";
+            var apiCases = await api.GetCasesRawAsync();
+            AppendLog($"{apiCases.Count} پرونده دریافت شد");
+
+            // Apply start/max filters
+            var startIdx = Math.Max(0, StartFromIndex - 1);
+            var endIdx = MaxCases > 0 ? Math.Min(startIdx + MaxCases, apiCases.Count) : apiCases.Count;
+            var casesToProcess = apiCases.Skip(startIdx).Take(endIdx - startIdx).ToList();
+
+            int processed = 0;
+            int total = casesToProcess.Count;
+
+            foreach (var apiCase in casesToProcess)
+            {
+                _cts?.Token.ThrowIfCancellationRequested();
+                _pauseEvent?.Wait(_cts?.Token ?? CancellationToken.None);
+
+                processed++;
+                Progress = (double)processed / total * 100;
+                StatusMessage = IsPaused
+                    ? $"متوقف شده — {processed}/{total}"
+                    : $"استخراج {processed}/{total}";
+
+                var serial = NezamApiClient.S(apiCase, "das_serial");
+                var caseNum = $"{NezamApiClient.S(apiCase, "das_year")}/{NezamApiClient.S(apiCase, "das_number")}";
+                var owner = $"{NezamApiClient.S(apiCase, "own_name")} {NezamApiClient.S(apiCase, "own_famil")}".Trim();
+
+                AppendLog($"[{processed}/{total}] {serial} | {caseNum} | {owner}");
+
+                try
+                {
+                    // Map case from API
+                    var caseModel = ApiExtractor.MapCase(apiCase);
+
+                    // Filter incomplete if requested
+                    if (FilterIncompleteOnly && db != null)
+                    {
+                        var cn = caseModel.CaseNumber;
+                        var specOk = !ExtractSpecifications || db.LoadSpecificationForCase(cn) != null;
+                        var engOk = !ExtractEngineers || (db.LoadEngineerCountForCase(cn)) > 0;
+                        var feesOk = !ExtractFees || (db.LoadFeeCountForCase(cn)) > 0;
+                        if (specOk && engOk && feesOk)
+                        {
+                            AppendLog($"  SKIP: {owner} (داده‌ها موجود است)");
+                            continue;
+                        }
+                    }
+
+                    // Get engineers
+                    if (ExtractEngineers)
+                    {
+                        var dbId = 0;
+                        if (apiCase.TryGetValue("db_id", out var dbVal) && dbVal is int dbI) dbId = dbI;
+                        var apiEngineers = await api.GetEngineersRawAsync(dbId);
+                        caseModel.Engineers = ApiExtractor.MapEngineers(apiEngineers);
+                    }
+
+                    // Get fees
+                    if (ExtractFees)
+                    {
+                        var dbId = 0;
+                        if (apiCase.TryGetValue("db_id", out var dbVal) && dbVal is int dbI) dbId = dbI;
+                        var apiFees = await api.GetFeesRawAsync(dbId);
+                        caseModel.Fees = ApiExtractor.MapFees(apiFees);
+                    }
+
+                    // Get reports
+                    if (ExtractReports)
+                    {
+                        var dbId = 0;
+                        if (apiCase.TryGetValue("db_id", out var dbVal2) && dbVal2 is int dbI2) dbId = dbI2;
+                        var apiReports = await api.GetReportsRawAsync(dbId);
+                        caseModel.Reports = ApiExtractor.MapReports(apiReports);
+                    }
+
+                    // Skip if specs already complete
+                    if (!UpdateAllSpecifications && caseModel.Specification != null)
+                    {
+                        var s = caseModel.Specification;
+                        bool specComplete = !string.IsNullOrEmpty(s.BuildingGroup)
+                            && !string.IsNullOrEmpty(s.PermitNumber)
+                            && !string.IsNullOrEmpty(s.StructureType);
+                        if (specComplete) caseModel.Specification = null;
+                    }
+
+                    cases.Add(caseModel);
+                    AppendLog($"  OK: {owner} — Eng:{caseModel.Engineers.Count} Fees:{caseModel.Fees.Count}");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"  FAIL: {owner} - {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"خطای API: {ex.Message}");
+        }
+
+        return cases;
+    }
+
+    /// <summary>
+    /// FALLBACK PATH: Playwright-based Reports extraction only.
+    /// Opens browser, navigates to each case's reports page, extracts report data.
+    /// </summary>
+    private async Task ExtractReportsViaPlaywrightAsync(
+        List<Case> cases, string username, string password, NezamDatabase db)
+    {
+        PlaywrightBrowser? browser = null;
+        try
+        {
+            browser = new PlaywrightBrowser();
+            await browser.LaunchAsync(headless: false);
+            AppendLog("مرورگر برای گزارش‌ها راه‌اندازی شد ✓");
+
+            var scraper = new CaseScraper(browser);
+            var loginOk = await scraper.LoginAsync(username, password);
+            if (!loginOk)
+            {
+                AppendLog("خطا: ورود مرورگر ناموفق — گزارش‌ها استخراج نشد");
+                return;
+            }
+            await scraper.NavigateToTableAsync();
+
+            int reportCount = 0;
+            for (int i = 0; i < cases.Count; i++)
+            {
+                _cts?.Token.ThrowIfCancellationRequested();
+                _pauseEvent?.Wait(_cts?.Token ?? CancellationToken.None);
+
+                var c = cases[i];
+                StatusMessage = $"گزارش {i + 1}/{cases.Count}";
+
+                try
+                {
+                    var row = await scraper.FindRowForReportsAsync(c.Serial);
+                    if (row == null)
+                    {
+                        AppendLog($"  گزارش: ردیف {c.Serial} پیدا نشد");
+                        continue;
+                    }
+
+                    var reports = await scraper.ExtractReportsFromRowAsync(row);
+                    if (reports.Count > 0)
+                    {
+                        c.Reports = reports;
+                        reportCount += reports.Count;
+                        AppendLog($"  گزارش: {c.CaseNumber} — {reports.Count} گزارش");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"  گزارش خطا: {c.CaseNumber} - {ex.Message}");
+                }
+            }
+
+            AppendLog($"گزارش‌ها: {reportCount} مورد از {cases.Count} پرونده");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"خطای مرورگر: {ex.Message}");
+        }
+        finally
+        {
+            browser?.Dispose();
+        }
+    }
+
     private void StopExtraction()
     {
         _cts?.Cancel();
@@ -208,10 +348,114 @@ public sealed class ExtractionController : ViewModelBase
         StatusMessage = "در حال توقف...";
     }
 
+    /// <summary>
+    /// Download report files from API and save to outputs folder.
+    /// Structure: outputs/{row}_{owner}_{caseNumber}/{reportNum}_{reportType}.{ext}
+    /// </summary>
+    private async Task DownloadReportFilesAsync(List<Case> cases, string username, string password)
+    {
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+
+            // Login for file download
+            var payload = System.Text.Json.JsonSerializer.Serialize(new { ozv_num = username, ozv_pass = password, ozv_type = 0 });
+            var loginReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://service.yazdnezam.ir:8033/panel/api/login")
+            { Content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json") };
+            var loginResp = await http.SendAsync(loginReq);
+            var token = System.Text.Json.JsonDocument.Parse(await loginResp.Content.ReadAsStringAsync()).RootElement.GetProperty("token").GetString()!;
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(token);
+
+            var userResp = await http.GetAsync("http://service.yazdnezam.ir:8033/panel/api/user");
+            var userJson = System.Text.Json.JsonDocument.Parse(await userResp.Content.ReadAsStringAsync());
+            var userId = userJson.RootElement.GetProperty("user").GetProperty("id").GetInt32();
+            var cityId = userJson.RootElement.GetProperty("user").GetProperty("user_shahrestan").GetInt32();
+
+            // Get raw cases for db_id mapping
+            var caseResp = await http.GetAsync($"http://service.yazdnezam.ir:8033/panel/api/showParvandeNezaratMeybod/{userId}/{cityId}");
+            var rawCases = System.Text.Json.JsonDocument.Parse(await caseResp.Content.ReadAsStringAsync());
+
+            // Build dbId lookup
+            var dbIdMap = new Dictionary<string, int>();
+            foreach (var rc in rawCases.RootElement.EnumerateArray())
+            {
+                var serial = NezamApiClient.S(rc, "das_serial");
+                if (rc.TryGetProperty("db_id", out var dbVal) && dbVal.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    dbIdMap[serial] = dbVal.GetInt32();
+            }
+
+            var outputBase = string.IsNullOrEmpty(OutputPath) 
+                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "outputs") 
+                : OutputPath;
+            Directory.CreateDirectory(outputBase);
+
+            int totalFiles = 0;
+            int caseNum = 0;
+
+            foreach (var c in cases)
+            {
+                caseNum++;
+                if (!dbIdMap.TryGetValue(c.Serial, out var dbId)) continue;
+
+                // Get reports for this case
+                var rptPayload = System.Text.Json.JsonSerializer.Serialize(new { db_id = dbId.ToString(), sha_id = cityId.ToString() });
+                var rptReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://service.yazdnezam.ir:8033/panel/api/getGozareshat")
+                { Content = new System.Net.Http.StringContent(rptPayload, System.Text.Encoding.UTF8, "application/json") };
+                var rptResp = await http.SendAsync(rptReq);
+                var rptJson = System.Text.Json.JsonDocument.Parse(await rptResp.Content.ReadAsStringAsync());
+
+                if (rptJson.RootElement.GetArrayLength() == 0) continue;
+
+                // Create case folder
+                var safeOwner = (c.Owner ?? "").Replace("/", "_").Replace("\\", "_").Replace(":", "_");
+                var safeCaseNum = (c.CaseNumber ?? "").Replace("/", "_");
+                var caseFolder = Path.Combine(outputBase, $"{caseNum}_{safeOwner}_{safeCaseNum}");
+                Directory.CreateDirectory(caseFolder);
+
+                int reportNum = 0;
+                foreach (var r in rptJson.RootElement.EnumerateArray())
+                {
+                    reportNum++;
+                    var imageName = NezamApiClient.S(r, "image_name");
+                    if (string.IsNullOrEmpty(imageName)) continue;
+
+                    var reportType = NezamApiClient.S(r, "brt_report_title");
+                    var safeReportType = reportType.Replace("/", "_").Replace("\\", "_").Replace(":", "_");
+                    var ext = Path.GetExtension(imageName).ToLower();
+                    if (string.IsNullOrEmpty(ext)) ext = ".jpg";
+
+                    var downloadUrl = $"http://service.yazdnezam.ir:8033/panel/Panel/public/img/gozaresh/{imageName}";
+                    var fileName = $"{reportNum}_{safeReportType}{ext}";
+                    var filePath = Path.Combine(caseFolder, fileName);
+
+                    try
+                    {
+                        var resp = await http.GetAsync(downloadUrl);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var bytes = await resp.Content.ReadAsByteArrayAsync();
+                            await File.WriteAllBytesAsync(filePath, bytes);
+                            totalFiles++;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (caseNum % 10 == 0 || caseNum == cases.Count)
+                    AppendLog($"  فایل‌ها: {caseNum}/{cases.Count} ({totalFiles} فایل)");
+            }
+
+            AppendLog($"دانلود فایل‌ها: {totalFiles} فایل در {cases.Count} پرونده");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"خطای دانلود فایل‌ها: {ex.Message}");
+        }
+    }
+
     private void PauseResume()
     {
         if (_pauseEvent == null) return;
-
         if (IsPaused)
         {
             _pauseEvent.Set();

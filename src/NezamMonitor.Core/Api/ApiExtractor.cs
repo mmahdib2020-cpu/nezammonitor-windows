@@ -90,4 +90,26 @@ public static class ApiExtractor
             );
         }).ToList();
     }
+
+    /// <summary>Map API reports to existing ReportRecord model.</summary>
+    public static List<ReportRecord> MapReports(List<Dictionary<string, object?>> apiList)
+    {
+        int rowNum = 0;
+        return apiList.Select(r =>
+        {
+            rowNum++;
+            var hasFile = !string.IsNullOrEmpty(S(r, "image_name"));
+            return new ReportRecord(
+                rowNum.ToString(),                           // RowNo
+                S(r, "brt_report_title"),                   // ReportType
+                S(r, "brt_marhale_title"),                  // Stage
+                $"{S(r, "ozh_name")} {S(r, "ozh_famil")}".Trim(), // Engineer
+                S(r, "mas_title"),                           // Discipline
+                S(r, "br_bazdid_date"),                      // VisitDate
+                S(r, "br_exec_ceil"),                        // CeilingCount
+                S(r, "br_andicator"),                        // Indicator
+                hasFile                                      // HasFile
+            );
+        }).ToList();
+    }
 }

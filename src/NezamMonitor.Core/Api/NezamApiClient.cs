@@ -122,8 +122,38 @@ public sealed class NezamApiClient : IDisposable
         return result;
     }
 
+    /// <summary>Get reports for a specific case.</summary>
+    public async Task<List<Dictionary<string, object?>>> GetReportsRawAsync(int dbId)
+    {
+        var payload = System.Text.Json.JsonSerializer.Serialize(new { db_id = dbId.ToString(), sha_id = _cityId.ToString() });
+        var req = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/panel/api/getGozareshat")
+        { Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json") };
+        var resp = await _http.SendAsync(req);
+        resp.EnsureSuccessStatusCode();
+        var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var result = new List<Dictionary<string, object?>>();
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                var dict = new Dictionary<string, object?>();
+                foreach (var prop in item.EnumerateObject())
+                    dict[prop.Name] = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : prop.Value.ToString();
+                result.Add(dict);
+            }
+        }
+        return result;
+    }
+
     public static string S(Dictionary<string, object?> d, string k) =>
         d.TryGetValue(k, out var v) ? v?.ToString() ?? "" : "";
+
+    public static string S(System.Text.Json.JsonElement el, string k)
+    {
+        if (el.TryGetProperty(k, out var val))
+            return val.ValueKind == System.Text.Json.JsonValueKind.String ? val.GetString() ?? "" : val.ToString();
+        return "";
+    }
 
     public void Dispose() => _http.Dispose();
 }

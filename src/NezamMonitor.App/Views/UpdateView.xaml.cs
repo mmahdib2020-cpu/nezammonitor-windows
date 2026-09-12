@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using NezamMonitor.App.Services;
 using NezamMonitor.App.ViewModels;
 
@@ -99,7 +100,29 @@ public partial class UpdateView : UserControl
 
     private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
     {
+        // Save password when RememberMe is checked
         if (PasswordBox.IsLoaded && PasswordBox.Password.Length > 0)
-            DatabaseService.Instance.SaveSetting("password", PasswordBox.Password);
+        {
+            var db = DatabaseService.Instance;
+            var rememberMe = db.GetSetting("remember_me");
+            if (rememberMe == "true")
+            {
+                db.SaveSetting("password", PasswordBox.Password);
+            }
+        }
+    }
+
+    private void BtnBrowseOutput_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "انتخاب پوشه ذخیره فایل‌ها"
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            DatabaseService.Instance.SaveSetting("output_path", dialog.FolderName);
+            if (Template.FindName("OutputPathBox", this) is TextBox tb)
+                tb.Text = dialog.FolderName;
+        }
     }
 }
