@@ -38,7 +38,7 @@ public static class ApiExtractor
             RenovationCode = S(api, "das_code_nosazi"),
             PlanInstructionNo = S(api, "das_shahrdari_num"),
             PlanInstructionType = S(api, "dastyp_title"),
-            PlanInstructionDate = "",
+            PlanInstructionDate = S(api, "das_date_tarkhis"),
             LandArea = S(api, "das_masahat"),
             ParafArea = S(api, "db_metraj_shahrdari"),
             CapacityArea = S(api, "db_metraj_effective_nezarat"),
@@ -84,7 +84,7 @@ public static class ApiExtractor
                 docDate,                                      // StartDate (doc date)
                 paymentDate,                                  // EndDate (payment date)
                 $"{amount} ریال",                             // Amount
-                payed == "yes" ? "پرداخت شده" : "پرداخت نشده", // PayStatus
+                payed == "yes" ? "پرداخت شده" : payed == "ok" ? "تایید شده" : "پرداخت نشده", // PayStatus
                 docNum,                                       // ConfirmStatus (doc num)
                 S(f, "dbm_p_type")                            // AmountType
             );

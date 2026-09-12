@@ -68,12 +68,16 @@ public sealed class ExtractionController : ViewModelBase
     public ICommand LoadLatestCommand { get; }
 
     private ExtractionController()
-    {
-        StartCommand = new AsyncRelayCommand(StartExtractionAsync, () => !IsBusy);
-        StopCommand = new RelayCommand(StopExtraction, () => IsBusy);
-        PauseResumeCommand = new RelayCommand(PauseResume);
-        LoadLatestCommand = new RelayCommand(LoadLatest);
-    }
+        {
+            StartCommand = new AsyncRelayCommand(StartExtractionAsync, () => !IsBusy);
+            StopCommand = new RelayCommand(StopExtraction, () => IsBusy);
+            PauseResumeCommand = new RelayCommand(PauseResume);
+            LoadLatestCommand = new RelayCommand(LoadLatest);
+
+            // Default output path
+            var db = DatabaseService.Instance;
+            _outputPath = db.GetSetting("output_path") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "outputs");
+        }
 
     public void AppendLog(string message)
     {
